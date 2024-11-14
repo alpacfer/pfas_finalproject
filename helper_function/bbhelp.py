@@ -10,15 +10,14 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 def extract_image_info(image_index, labels_file):
     """
     Extracts and returns all relevant information for a given image index from the labels file,
-    organized in a dictionary keyed by track_id for easy access.
+    organized in a list containing information for all objects in the frame.
 
     Parameters:
     image_index (int): The index of the image to extract information for.
     labels_file (str): Path to the labels.txt file containing bounding box information.
 
     Returns:
-    dict: A dictionary where each key is a track_id, and each value is a dictionary containing
-          information about an object in the image.
+    list: A list of dictionaries, each containing information about an object in the image.
     """
     # Load labels from the file
     with open(labels_file, 'r') as file:
@@ -26,12 +25,17 @@ def extract_image_info(image_index, labels_file):
 
     # Filter labels for the current frame
     frame_number = image_index
-    frame_info = {}
+    frame_info = []
 
     for line in labels:
         columns = line.strip().split()
         if int(columns[0]) == frame_number:
-            track_id = int(columns[1])
+            track_id_raw = columns[1]
+            try:
+                track_id = int(track_id_raw)
+            except ValueError:
+                track_id = track_id_raw  # Keep it as string if it cannot be converted
+
             left, top, right, bottom = map(float, columns[6:10])
             center_x = (left + right) / 2
             center_y = (top + bottom) / 2
@@ -50,10 +54,35 @@ def extract_image_info(image_index, labels_file):
                 'rotation_y': float(columns[16]),
                 'score': float(columns[17]) if len(columns) > 17 else None
             }
-            # Use track_id as the key for easy access
-            frame_info[track_id] = info
+            # Append info to the list
+            frame_info.append(info)
 
     return frame_info
+
+def get_track_info(track_id, image_index, labels_file, item_key):
+    """
+    Retrieves the specified item for a given track_id in a specific frame.
+    
+    Parameters:
+    track_id (int): The track ID of the object to retrieve.
+    image_index (int): The frame number (image index) to search in.
+    labels_file (str): Path to the labels.txt file containing bounding box information.
+    item_key (str): The key of the item to fetch (e.g., 'center', 'bbox', 'type').
+    
+    Returns:
+    The value corresponding to the item_key for the matching object.
+    If no matching object is found, returns None.
+    """
+    # Extract frame information for the given frame
+    frame_info = extract_image_info(image_index, labels_file)
+    
+    # Iterate over objects in the frame to find the one with the desired track_id
+    for obj in frame_info:
+        if obj['track_id'] == track_id:
+            return obj.get(item_key)
+    
+    # If no object is found with the given track_id, return None
+    return None
 
 
 def display_image(image_index, images_folder, labels_file, display_type='bbox'):
@@ -69,7 +98,8 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     type_colors = {'Car': ('red', 'darkred'), 'Pedestrian': ('blue', 'darkblue'), 'Cyclist': ('green', 'darkgreen')}
 
     # Get image files
-    image_files = [entry.name for entry in os.scandir(images_folder) if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
+    image_files = [entry.name for entry in os.scandir(images_folder)
+                   if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
     image_files.sort()
 
     if image_index < 0 or image_index >= len(image_files):
@@ -84,10 +114,11 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     ax.imshow(image)
 
     # Iterate through all objects in the current frame
-    for obj in frame_info.values():  # Access values directly from the dictionary
+    for obj in frame_info:
         left, top, right, bottom = obj['bbox']
         obj_type = obj['type']
         track_id = obj['track_id']
+        track_id_text = f"ID: {track_id}"
         occluded = obj['occluded']
         color = type_colors.get(obj_type, ('yellow', 'darkyellow'))[1 if occluded else 0]
 
@@ -96,14 +127,14 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
             rect = patches.Rectangle((left, top), right - left, bottom - top, linewidth=2, edgecolor=color, facecolor='none')
             ax.add_patch(rect)
             # Display track_id at the top-left of the bounding box with background
-            ax.text(left, top - 5, f'ID: {track_id}', color='white', fontsize=8, weight='bold',
+            ax.text(left, top - 5, track_id_text, color='white', fontsize=8, weight='bold',
                     bbox=dict(facecolor=color, edgecolor='none', boxstyle='round,pad=0.2', alpha=0.7))
         elif display_type == 'center':
             # Plot center point
             center_x, center_y = obj['center']
             ax.plot(center_x, center_y, 'o', color=color, markersize=5)
             # Display track_id near the center point with background
-            ax.text(center_x + 5, center_y - 5, f'ID: {track_id}', color='white', fontsize=8, weight='bold',
+            ax.text(center_x + 5, center_y - 5, track_id_text, color='white', fontsize=8, weight='bold',
                     bbox=dict(facecolor=color, edgecolor='none', boxstyle='round,pad=0.2', alpha=0.7))
 
     # Create a legend for the types of objects
@@ -111,8 +142,9 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     ax.legend(handles=handles, loc='upper right')
 
     plt.axis('on')
-    plt.title(image_path)
+    plt.title(f"Frame {image_index}: {image_files[image_index]}")
     plt.show()
+
 
 
 def display_images_as_video(images_folder, labels_file, frame_delay=500, display_type='bbox'):
@@ -127,7 +159,8 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
     """
     type_colors = {'Car': (0, 0, 255), 'Pedestrian': (255, 0, 0), 'Cyclist': (0, 255, 0)}
 
-    image_files = [entry.name for entry in os.scandir(images_folder) if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
+    image_files = [entry.name for entry in os.scandir(images_folder)
+                   if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
     image_files.sort()  # Ensure consistent ordering
 
     for image_index, image_name in enumerate(image_files):
@@ -140,15 +173,16 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
         # Display frame number at the top-left corner
         cv2.putText(image, f'Frame ID: {image_index}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        for obj in frame_info.values():
+        for obj in frame_info:
             left, top, right, bottom = map(int, obj['bbox'])
             obj_type = obj['type']
             track_id = obj['track_id']
+            track_id_text = f"ID: {track_id}"
             color = type_colors.get(obj_type, (0, 255, 255))
 
             if display_type == 'bbox':
                 cv2.rectangle(image, (left, top), (right, bottom), color, 2)
-                label = f'ID: {track_id}'
+                label = track_id_text
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(image, (left, top - text_height - 10), (left + text_width, top), color, -1)
                 cv2.putText(image, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
@@ -156,17 +190,20 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
             elif display_type == 'center':
                 center_x, center_y = map(int, obj['center'])
                 cv2.circle(image, (center_x, center_y), 5, color, -1)
-                label = f'ID: {track_id}'
+                label = track_id_text
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(image, (center_x + 10, center_y - text_height - 5), 
+                cv2.rectangle(image, (center_x + 10, center_y - text_height - 5),
                               (center_x + 10 + text_width, center_y + 5), color, -1)
-                cv2.putText(image, label, (center_x + 10, center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.putText(image, label, (center_x + 10, center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                            (255, 255, 255), 1, cv2.LINE_AA)
 
         cv2.imshow("Video Playback", image)
         if cv2.waitKey(frame_delay) & 0xFF == ord('q'):
             break
 
     cv2.destroyAllWindows()
+
+
 
 def create_obstructed_labels_complex(labels_file, obstruction_data):
     """
@@ -209,3 +246,36 @@ def create_obstructed_labels_complex(labels_file, obstruction_data):
         file.writelines(modified_labels)
 
     print(f"New labels file created: {new_labels_file}")
+
+def anonymize_track_ids(labels_file):
+    """
+    Creates a new labels file with all track IDs replaced by '??', retaining other information.
+
+    Parameters:
+    labels_file (str): Path to the original labels file.
+
+    Returns:
+    None
+    """
+    # Read original labels
+    with open(labels_file, 'r') as file:
+        labels = file.readlines()
+
+    # Prompt for the name of the new labels file
+    new_labels_file = input("Enter the name for the new labels file with anonymized track IDs: ")
+
+    # Prepare modified data with "??" replacing the track_id column (second column)
+    modified_labels = []
+    for line in labels:
+        columns = line.strip().split()
+        # Replace the track_id with '??'
+        columns[1] = "??"
+        # Reconstruct the line with the modified track_id and add to the list
+        modified_line = " ".join(columns) + "\n"
+        modified_labels.append(modified_line)
+
+    # Write modified labels to the new file
+    with open(new_labels_file, 'w') as file:
+        file.writelines(modified_labels)
+
+    print(f"New labels file with anonymized track IDs created: {new_labels_file}")
