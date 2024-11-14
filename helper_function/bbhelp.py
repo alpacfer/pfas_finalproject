@@ -127,7 +127,6 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
     """
     type_colors = {'Car': (0, 0, 255), 'Pedestrian': (255, 0, 0), 'Cyclist': (0, 255, 0)}
 
-    # Get list of image files in the folder
     image_files = [entry.name for entry in os.scandir(images_folder) if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
     image_files.sort()  # Ensure consistent ordering
 
@@ -138,43 +137,32 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
         # Extract frame information for the current image index
         frame_info = extract_image_info(image_index, labels_file)
 
-        # Iterate through each object in frame_info dictionary
+        # Display frame number at the top-left corner
+        cv2.putText(image, f'Frame ID: {image_index}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
         for obj in frame_info.values():
             left, top, right, bottom = map(int, obj['bbox'])
             obj_type = obj['type']
             track_id = obj['track_id']
-            color = type_colors.get(obj_type, (0, 255, 255))  # Default color is yellow
+            color = type_colors.get(obj_type, (0, 255, 255))
 
             if display_type == 'bbox':
-                # Draw bounding box
                 cv2.rectangle(image, (left, top), (right, bottom), color, 2)
-                
-                # Background for track_id text
                 label = f'ID: {track_id}'
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(image, (left, top - text_height - 10), (left + text_width, top), color, -1)
-
-                # Display track_id on top of the background
                 cv2.putText(image, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-                
+
             elif display_type == 'center':
-                # Draw center point
                 center_x, center_y = map(int, obj['center'])
                 cv2.circle(image, (center_x, center_y), 5, color, -1)
-
-                # Background for track_id text near the center point
                 label = f'ID: {track_id}'
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(image, (center_x + 10, center_y - text_height - 5), 
                               (center_x + 10 + text_width, center_y + 5), color, -1)
-
-                # Display track_id on top of the background
                 cv2.putText(image, label, (center_x + 10, center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
-        # Show the image in a separate window
         cv2.imshow("Video Playback", image)
-
-        # Wait for specified delay or until 'q' key is pressed
         if cv2.waitKey(frame_delay) & 0xFF == ord('q'):
             break
 
