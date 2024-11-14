@@ -167,3 +167,45 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
             break
 
     cv2.destroyAllWindows()
+
+def create_obstructed_labels_complex(labels_file, obstruction_data):
+    """
+    Creates a new labels file with specified track IDs removed within specific frame ranges,
+    simulating obstruction for each track ID in its respective range.
+
+    Parameters:
+    labels_file (str): Path to the original labels file.
+    obstruction_data (dict): Dictionary where each key is a track_id and each value is a tuple (start_frame, end_frame).
+
+    Returns:
+    None
+    """
+    # Read original labels
+    with open(labels_file, 'r') as file:
+        labels = file.readlines()
+
+    # Prompt for the name of the new labels file
+    new_labels_file = input("Enter the name for the new labels file: ")
+
+    # Prepare modified data
+    modified_labels = []
+    for line in labels:
+        columns = line.strip().split()
+        frame = int(columns[0])
+        current_track_id = int(columns[1])
+
+        # Check if the current track_id has an obstruction range
+        if current_track_id in obstruction_data:
+            start_frame, end_frame = obstruction_data[current_track_id]
+            # Skip lines within the obstruction range for this track_id
+            if start_frame <= frame <= end_frame:
+                continue  # Skip this line
+
+        # Add line to modified labels if it doesn't match any obstruction criteria
+        modified_labels.append(line)
+
+    # Write modified labels to new file
+    with open(new_labels_file, 'w') as file:
+        file.writelines(modified_labels)
+
+    print(f"New labels file created: {new_labels_file}")
