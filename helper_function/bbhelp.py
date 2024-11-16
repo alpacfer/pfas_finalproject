@@ -10,6 +10,7 @@ import random
 import plotly.graph_objs as go
 from plotly.offline import plot
 import random
+from scipy.spatial import distance
 
 
 def extract_image_info(image_index, labels_file):
@@ -210,7 +211,7 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
 
 
 
-def create_obstructed_labels_complex(labels_file, obstruction_data):
+def create_obstructed_labels_complex(labels_file, obstruction_data, new_labels_file):
     """
     Creates a new labels file with specified track IDs removed within specific frame ranges,
     simulating obstruction for each track ID in its respective range.
@@ -218,6 +219,7 @@ def create_obstructed_labels_complex(labels_file, obstruction_data):
     Parameters:
     labels_file (str): Path to the original labels file.
     obstruction_data (dict): Dictionary where each key is a track_id and each value is a tuple (start_frame, end_frame).
+    new_labels_file (str): Path to save the new labels file with obstructed track IDs.
 
     Returns:
     None
@@ -225,9 +227,6 @@ def create_obstructed_labels_complex(labels_file, obstruction_data):
     # Read original labels
     with open(labels_file, 'r') as file:
         labels = file.readlines()
-
-    # Prompt for the name of the new labels file
-    new_labels_file = input("Enter the name for the new labels file: ")
 
     # Prepare modified data
     modified_labels = []
@@ -252,12 +251,14 @@ def create_obstructed_labels_complex(labels_file, obstruction_data):
 
     print(f"New labels file created: {new_labels_file}")
 
-def anonymize_track_ids(labels_file):
+
+def anonymize_track_ids(labels_file, new_labels_file):
     """
     Creates a new labels file with all track IDs replaced by '??', retaining other information.
 
     Parameters:
     labels_file (str): Path to the original labels file.
+    new_labels_file (str): Path to save the new labels file with anonymized track IDs.
 
     Returns:
     None
@@ -265,9 +266,6 @@ def anonymize_track_ids(labels_file):
     # Read original labels
     with open(labels_file, 'r') as file:
         labels = file.readlines()
-
-    # Prompt for the name of the new labels file
-    new_labels_file = input("Enter the name for the new labels file with anonymized track IDs: ")
 
     # Prepare modified data with "??" replacing the track_id column (second column)
     modified_labels = []
@@ -506,3 +504,89 @@ def plot_trajectories_in_3d_interactive(labels_file, track_ids=None):
     fig.update_layout(scene_camera=dict(eye=dict(x=1.2, y=1.2, z=0.8)))
     fig.show()
 
+
+def recreate_track_ids_greedy(labels_file, output_file, max_distance=50, frame_gap=2):
+    """
+    Recreates consistent track IDs across frames based on spatial proximity,
+    ensuring each track ID corresponds to the closest object and is unique.
+
+    Parameters:
+    labels_file (str): Path to the anonymized labels file.
+    output_file (str): Path to save the labels file with recreated track IDs.
+    max_distance (float): Maximum distance to consider two centers as the same object.
+    frame_gap (int): Maximum gap in frames to keep a track active.
+    """
+    # Parse the anonymized labels file
+    with open(labels_file, 'r') as file:
+        labels = [line.strip().split() for line in file]
+
+    # Convert frame data into a dictionary for easier access
+    frames = {}
+    for line in labels:
+        frame = int(line[0])
+        if frame not in frames:
+            frames[frame] = []
+        frames[frame].append(line)
+
+    # Dictionary to store active tracks (track_id → [center, last_frame])
+    active_tracks = {}
+    next_track_id = 1
+    updated_labels = []
+
+    # Process frames in order
+    for frame in sorted(frames.keys()):
+        current_objects = frames[frame]
+        frame_tracks = {}
+        used_tracks = set()
+        used_objects = set()
+
+        # Compute object centers
+        objects_info = []
+        for i, obj in enumerate(current_objects):
+            _, _, obj_type, truncated, occluded, alpha, left, top, right, bottom, *rest = obj
+            bbox = [float(left), float(top), float(right), float(bottom)]
+            center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+            objects_info.append((i, center, obj))
+
+        # Compute distances between active tracks and current objects
+        distances = []
+        for track_id, (track_center, last_frame) in active_tracks.items():
+            if frame - last_frame <= frame_gap:
+                for obj_idx, obj_center, obj_data in objects_info:
+                    dist = distance.euclidean(track_center, obj_center)
+                    if dist < max_distance:
+                        distances.append((dist, track_id, obj_idx, obj_data, obj_center))
+
+        # Sort distances to prioritize closest matches
+        distances.sort(key=lambda x: x[0])
+
+        # Assign tracks to closest objects
+        for _, track_id, obj_idx, obj_data, obj_center in distances:
+            if track_id not in used_tracks and obj_idx not in used_objects:
+                used_tracks.add(track_id)
+                used_objects.add(obj_idx)
+                frame_tracks[track_id] = obj_center
+
+                # Reconstruct the label with the assigned track ID
+                updated_line = [frame, track_id] + obj_data[2:]
+                updated_labels.append(" ".join(map(str, updated_line)))
+
+        # Assign new track IDs to unmatched objects
+        for obj_idx, obj_center, obj_data in objects_info:
+            if obj_idx not in used_objects:
+                new_track_id = next_track_id
+                next_track_id += 1
+                frame_tracks[new_track_id] = obj_center
+
+                # Reconstruct the label with the new track ID
+                updated_line = [frame, new_track_id] + obj_data[2:]
+                updated_labels.append(" ".join(map(str, updated_line)))
+
+        # Update active tracks
+        active_tracks = {tid: (center, frame) for tid, center in frame_tracks.items()}
+
+    # Write the updated labels to the output file
+    with open(output_file, 'w') as file:
+        file.writelines(line + "\n" for line in updated_labels)
+
+    print(f"Track IDs recreated and saved to {output_file}")
