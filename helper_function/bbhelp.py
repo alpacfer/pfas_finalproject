@@ -3,13 +3,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from PIL import Image, ImageEnhance, ImageOps
 import os
-import time
-import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import random
 import plotly.graph_objs as go
-from plotly.offline import plot
-import random
 from scipy.spatial import distance
 
 
