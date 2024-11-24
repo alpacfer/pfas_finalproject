@@ -1,24 +1,24 @@
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageOps
 import os
-import time
-import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import random
+import plotly.graph_objs as go
+from scipy.spatial import distance
+
 
 def extract_image_info(image_index, labels_file):
     """
     Extracts and returns all relevant information for a given image index from the labels file,
-    organized in a dictionary keyed by track_id for easy access.
+    organized in a list containing information for all objects in the frame.
 
     Parameters:
     image_index (int): The index of the image to extract information for.
     labels_file (str): Path to the labels.txt file containing bounding box information.
 
     Returns:
-    dict: A dictionary where each key is a track_id, and each value is a dictionary containing
-          information about an object in the image.
+    list: A list of dictionaries, each containing information about an object in the image.
     """
     # Load labels from the file
     with open(labels_file, 'r') as file:
@@ -26,12 +26,17 @@ def extract_image_info(image_index, labels_file):
 
     # Filter labels for the current frame
     frame_number = image_index
-    frame_info = {}
+    frame_info = []
 
     for line in labels:
         columns = line.strip().split()
         if int(columns[0]) == frame_number:
-            track_id = int(columns[1])
+            track_id_raw = columns[1]
+            try:
+                track_id = int(track_id_raw)
+            except ValueError:
+                track_id = track_id_raw  # Keep it as string if it cannot be converted
+
             left, top, right, bottom = map(float, columns[6:10])
             center_x = (left + right) / 2
             center_y = (top + bottom) / 2
@@ -50,10 +55,35 @@ def extract_image_info(image_index, labels_file):
                 'rotation_y': float(columns[16]),
                 'score': float(columns[17]) if len(columns) > 17 else None
             }
-            # Use track_id as the key for easy access
-            frame_info[track_id] = info
+            # Append info to the list
+            frame_info.append(info)
 
     return frame_info
+
+def get_track_info(track_id, image_index, labels_file, item_key):
+    """
+    Retrieves the specified item for a given track_id in a specific frame.
+    
+    Parameters:
+    track_id (int): The track ID of the object to retrieve.
+    image_index (int): The frame number (image index) to search in.
+    labels_file (str): Path to the labels.txt file containing bounding box information.
+    item_key (str): The key of the item to fetch (e.g., 'center', 'bbox', 'type').
+    
+    Returns:
+    The value corresponding to the item_key for the matching object.
+    If no matching object is found, returns None.
+    """
+    # Extract frame information for the given frame
+    frame_info = extract_image_info(image_index, labels_file)
+    
+    # Iterate over objects in the frame to find the one with the desired track_id
+    for obj in frame_info:
+        if obj['track_id'] == track_id:
+            return obj.get(item_key)
+    
+    # If no object is found with the given track_id, return None
+    return None
 
 
 def display_image(image_index, images_folder, labels_file, display_type='bbox'):
@@ -69,7 +99,8 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     type_colors = {'Car': ('red', 'darkred'), 'Pedestrian': ('blue', 'darkblue'), 'Cyclist': ('green', 'darkgreen')}
 
     # Get image files
-    image_files = [entry.name for entry in os.scandir(images_folder) if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
+    image_files = [entry.name for entry in os.scandir(images_folder)
+                   if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
     image_files.sort()
 
     if image_index < 0 or image_index >= len(image_files):
@@ -84,10 +115,11 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     ax.imshow(image)
 
     # Iterate through all objects in the current frame
-    for obj in frame_info.values():  # Access values directly from the dictionary
+    for obj in frame_info:
         left, top, right, bottom = obj['bbox']
         obj_type = obj['type']
         track_id = obj['track_id']
+        track_id_text = f"ID: {track_id}"
         occluded = obj['occluded']
         color = type_colors.get(obj_type, ('yellow', 'darkyellow'))[1 if occluded else 0]
 
@@ -96,14 +128,14 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
             rect = patches.Rectangle((left, top), right - left, bottom - top, linewidth=2, edgecolor=color, facecolor='none')
             ax.add_patch(rect)
             # Display track_id at the top-left of the bounding box with background
-            ax.text(left, top - 5, f'ID: {track_id}', color='white', fontsize=8, weight='bold',
+            ax.text(left, top - 5, track_id_text, color='white', fontsize=8, weight='bold',
                     bbox=dict(facecolor=color, edgecolor='none', boxstyle='round,pad=0.2', alpha=0.7))
         elif display_type == 'center':
             # Plot center point
             center_x, center_y = obj['center']
             ax.plot(center_x, center_y, 'o', color=color, markersize=5)
             # Display track_id near the center point with background
-            ax.text(center_x + 5, center_y - 5, f'ID: {track_id}', color='white', fontsize=8, weight='bold',
+            ax.text(center_x + 5, center_y - 5, track_id_text, color='white', fontsize=8, weight='bold',
                     bbox=dict(facecolor=color, edgecolor='none', boxstyle='round,pad=0.2', alpha=0.7))
 
     # Create a legend for the types of objects
@@ -111,8 +143,9 @@ def display_image(image_index, images_folder, labels_file, display_type='bbox'):
     ax.legend(handles=handles, loc='upper right')
 
     plt.axis('on')
-    plt.title(image_path)
+    plt.title(f"Frame {image_index}: {image_files[image_index]}")
     plt.show()
+
 
 
 def display_images_as_video(images_folder, labels_file, frame_delay=500, display_type='bbox'):
@@ -127,8 +160,8 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
     """
     type_colors = {'Car': (0, 0, 255), 'Pedestrian': (255, 0, 0), 'Cyclist': (0, 255, 0)}
 
-    # Get list of image files in the folder
-    image_files = [entry.name for entry in os.scandir(images_folder) if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
+    image_files = [entry.name for entry in os.scandir(images_folder)
+                   if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
     image_files.sort()  # Ensure consistent ordering
 
     for image_index, image_name in enumerate(image_files):
@@ -138,44 +171,417 @@ def display_images_as_video(images_folder, labels_file, frame_delay=500, display
         # Extract frame information for the current image index
         frame_info = extract_image_info(image_index, labels_file)
 
-        # Iterate through each object in frame_info dictionary
-        for obj in frame_info.values():
+        # Display frame number at the top-left corner
+        cv2.putText(image, f'Frame ID: {image_index}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+        for obj in frame_info:
             left, top, right, bottom = map(int, obj['bbox'])
             obj_type = obj['type']
             track_id = obj['track_id']
-            color = type_colors.get(obj_type, (0, 255, 255))  # Default color is yellow
+            track_id_text = f"ID: {track_id}"
+            color = type_colors.get(obj_type, (0, 255, 255))
 
             if display_type == 'bbox':
-                # Draw bounding box
                 cv2.rectangle(image, (left, top), (right, bottom), color, 2)
-                
-                # Background for track_id text
-                label = f'ID: {track_id}'
+                label = track_id_text
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(image, (left, top - text_height - 10), (left + text_width, top), color, -1)
-
-                # Display track_id on top of the background
                 cv2.putText(image, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-                
+
             elif display_type == 'center':
-                # Draw center point
                 center_x, center_y = map(int, obj['center'])
                 cv2.circle(image, (center_x, center_y), 5, color, -1)
-
-                # Background for track_id text near the center point
-                label = f'ID: {track_id}'
+                label = track_id_text
                 (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(image, (center_x + 10, center_y - text_height - 5), 
+                cv2.rectangle(image, (center_x + 10, center_y - text_height - 5),
                               (center_x + 10 + text_width, center_y + 5), color, -1)
+                cv2.putText(image, label, (center_x + 10, center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                            (255, 255, 255), 1, cv2.LINE_AA)
 
-                # Display track_id on top of the background
-                cv2.putText(image, label, (center_x + 10, center_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-
-        # Show the image in a separate window
         cv2.imshow("Video Playback", image)
-
-        # Wait for specified delay or until 'q' key is pressed
         if cv2.waitKey(frame_delay) & 0xFF == ord('q'):
             break
 
     cv2.destroyAllWindows()
+
+
+
+def create_obstructed_labels_complex(labels_file, obstruction_data, new_labels_file):
+    """
+    Creates a new labels file with specified track IDs removed within specific frame ranges,
+    simulating obstruction for each track ID in its respective range.
+
+    Parameters:
+    labels_file (str): Path to the original labels file.
+    obstruction_data (dict): Dictionary where each key is a track_id and each value is a tuple (start_frame, end_frame).
+    new_labels_file (str): Path to save the new labels file with obstructed track IDs.
+
+    Returns:
+    None
+    """
+    # Read original labels
+    with open(labels_file, 'r') as file:
+        labels = file.readlines()
+
+    # Prepare modified data
+    modified_labels = []
+    for line in labels:
+        columns = line.strip().split()
+        frame = int(columns[0])
+        current_track_id = int(columns[1])
+
+        # Check if the current track_id has an obstruction range
+        if current_track_id in obstruction_data:
+            start_frame, end_frame = obstruction_data[current_track_id]
+            # Skip lines within the obstruction range for this track_id
+            if start_frame <= frame <= end_frame:
+                continue  # Skip this line
+
+        # Add line to modified labels if it doesn't match any obstruction criteria
+        modified_labels.append(line)
+
+    # Write modified labels to new file
+    with open(new_labels_file, 'w') as file:
+        file.writelines(modified_labels)
+
+    print(f"New labels file created: {new_labels_file}")
+
+
+def anonymize_track_ids(labels_file, new_labels_file):
+    """
+    Creates a new labels file with all track IDs replaced by '??', retaining other information.
+
+    Parameters:
+    labels_file (str): Path to the original labels file.
+    new_labels_file (str): Path to save the new labels file with anonymized track IDs.
+
+    Returns:
+    None
+    """
+    # Read original labels
+    with open(labels_file, 'r') as file:
+        labels = file.readlines()
+
+    # Prepare modified data with "??" replacing the track_id column (second column)
+    modified_labels = []
+    for line in labels:
+        columns = line.strip().split()
+        # Replace the track_id with '??'
+        columns[1] = "??"
+        # Reconstruct the line with the modified track_id and add to the list
+        modified_line = " ".join(columns) + "\n"
+        modified_labels.append(modified_line)
+
+    # Write modified labels to the new file
+    with open(new_labels_file, 'w') as file:
+        file.writelines(modified_labels)
+
+    print(f"New labels file with anonymized track IDs created: {new_labels_file}")
+
+
+def plot_trajectories_on_initial_frame(labels_file, images_folder, track_ids=None):
+    """
+    Plots the center trajectories of bounding boxes for specified track IDs
+    overlaid on a darkened initial frame of the sequence.
+    
+    Parameters:
+    labels_file (str): Path to the labels.txt file containing bounding box information.
+    images_folder (str): Path to the folder containing the sequence images.
+    track_ids (list): List of track IDs to plot. If None, plot all track IDs.
+    
+    Returns:
+    None
+    """
+    # Read labels file and extract data
+    with open(labels_file, 'r') as file:
+        labels = file.readlines()
+    
+    # Dictionary to store center coordinates for each track ID
+    track_data = {}
+    
+    for line in labels:
+        columns = line.strip().split()
+        frame = int(columns[0])
+        track_id_raw = columns[1]
+        try:
+            track_id = int(track_id_raw)
+        except ValueError:
+            track_id = track_id_raw  # Keep as string if not convertible to int
+        
+        left, top, right, bottom = map(float, columns[6:10])
+        center_x = (left + right) / 2
+        center_y = (top + bottom) / 2
+        
+        # Append center coordinates to the corresponding track ID
+        if track_id not in track_data:
+            track_data[track_id] = []
+        track_data[track_id].append((frame, center_x, center_y))
+    
+    # Filter track IDs to plot if a specific list is provided
+    if track_ids is not None:
+        track_data = {tid: coords for tid, coords in track_data.items() if tid in track_ids}
+    
+    # Load and process the first image as the background
+    image_files = [entry.name for entry in os.scandir(images_folder)
+                   if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'bmp'))]
+    image_files.sort()
+    first_image_path = os.path.join(images_folder, image_files[0])
+    image = Image.open(first_image_path).convert('L')  # Convert to grayscale
+    image = ImageEnhance.Brightness(image).enhance(0.8)  # Dim the brightness
+    image = ImageOps.colorize(image, black="black", white="darkgray")  # Apply a dark tone
+
+    # Set up the plot
+    plt.figure(figsize=(12, 8))
+    plt.imshow(image)
+    plt.title("Track ID Trajectories on Darkened Initial Frame", fontsize=16, color="black")
+    plt.axis('off')  # Hide axes since we're overlaying on the image
+    
+    # Generate a unique, bright color for each track ID
+    colors = {}
+    for track_id in track_data.keys():
+        colors[track_id] = [random.random(), random.random(), random.random()]
+    
+    # Overlay trajectories for each track ID
+    for track_id, trajectory in track_data.items():
+        x_coords = [coord[1] for coord in trajectory]
+        y_coords = [coord[2] for coord in trajectory]
+        plt.plot(x_coords, y_coords, label=f'Track ID {track_id}', color=colors[track_id], linewidth=2)
+    
+    # Add a legend with adjusted text color and visibility
+    legend = plt.legend(
+        loc='upper left',
+        fontsize=8,
+        bbox_to_anchor=(1, 1),
+        frameon=True,
+        facecolor="black",
+        edgecolor="white"
+    )
+    for text in legend.get_texts():
+        text.set_color("white")  # Set legend text color to white
+    
+    # Adjust layout to ensure everything fits without extra margins
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_trajectories_in_3d_interactive(labels_file, track_ids=None):
+    """
+    Plots interactive 3D trajectories of specified track IDs using the 'location' data from the labels file,
+    with the beginnings and ends clearly marked. Y is treated as the vertical axis.
+    
+    Parameters:
+    labels_file (str): Path to the labels.txt file containing bounding box and location information.
+    track_ids (list): List of track IDs to plot. If None, plot all track IDs.
+    
+    Returns:
+    None
+    """
+    import plotly.graph_objs as go
+    import plotly.express as px
+    import pandas as pd
+    import random
+
+    # Read labels file and extract data
+    data = []
+    with open(labels_file, 'r') as file:
+        for line in file:
+            columns = line.strip().split()
+            frame = int(columns[0])
+            track_id_raw = columns[1]
+            try:
+                track_id = int(track_id_raw)
+            except ValueError:
+                track_id = track_id_raw  # Keep as string if not convertible to int
+            
+            # Extract the 'location' data (x, y, z)
+            x = float(columns[13])  # x coordinate
+            y = float(columns[14])  # y coordinate (vertical axis)
+            z = float(columns[15])  # z coordinate
+            
+            # Append data to list
+            data.append({
+                'Frame': frame,
+                'TrackID': track_id,
+                'X': x,
+                'Y': y,
+                'Z': z
+            })
+
+    # Create a DataFrame for easier handling
+    df = pd.DataFrame(data)
+
+    # Filter track IDs if specified
+    if track_ids is not None:
+        df = df[df['TrackID'].isin(track_ids)]
+
+    # Get unique track IDs
+    unique_track_ids = df['TrackID'].unique()
+
+    # Define a color palette
+    color_map = px.colors.qualitative.Light24
+    color_dict = {track_id: color_map[i % len(color_map)] for i, track_id in enumerate(unique_track_ids)}
+
+    # Prepare the data for Plotly
+    data_traces = []
+    for track_id in unique_track_ids:
+        track_df = df[df['TrackID'] == track_id].sort_values('Frame')
+        x_coords = track_df['X']
+        y_coords = track_df['Y']
+        z_coords = track_df['Z']
+        frames = track_df['Frame']
+
+        color = color_dict[track_id]
+
+        # Create the line trace for the trajectory
+        trace_line = go.Scatter3d(
+            x=x_coords,
+            y=z_coords,  # z is plotted on the horizontal plane
+            z=y_coords,  # y is the vertical axis
+            mode='lines',
+            name=f'Track ID {track_id}',
+            line=dict(color=color, width=4),
+            hoverinfo='text',
+            text=[f'Track ID: {track_id}<br>Frame: {frame}<br>X: {x:.2f}<br>Y: {y:.2f}<br>Z: {z:.2f}' 
+                  for frame, x, y, z in zip(frames, x_coords, y_coords, z_coords)]
+        )
+
+        # Mark the starting point
+        trace_start = go.Scatter3d(
+            x=[x_coords.iloc[0]],
+            y=[z_coords.iloc[0]],
+            z=[y_coords.iloc[0]],
+            mode='markers+text',
+            marker=dict(color='green', size=8, symbol='circle'),
+            name=f'Start of {track_id}',
+            hoverinfo='text',
+            text=[f'Start<br>Track ID: {track_id}<br>Frame: {frames.iloc[0]}'],
+            textposition='top center',
+            showlegend=False
+        )
+
+        # Mark the ending point
+        trace_end = go.Scatter3d(
+            x=[x_coords.iloc[-1]],
+            y=[z_coords.iloc[-1]],
+            z=[y_coords.iloc[-1]],
+            mode='markers+text',
+            marker=dict(color='red', size=8, symbol='x'),
+            name=f'End of {track_id}',
+            hoverinfo='text',
+            text=[f'End<br>Track ID: {track_id}<br>Frame: {frames.iloc[-1]}'],
+            textposition='top center',
+            showlegend=False
+        )
+
+        # Add the traces to the data list
+        data_traces.extend([trace_line, trace_start, trace_end])
+
+    # Define the layout of the plot
+    layout = go.Layout(
+        title='Interactive 3D Trajectories of Track IDs',
+        scene=dict(
+            xaxis=dict(title='X (meters)'),
+            yaxis=dict(title='Z (meters)'),  # Z is horizontal plane axis
+            zaxis=dict(title='Y (meters)'),  # Y is vertical axis
+            aspectmode='data'  # Ensures equal scaling for all axes
+        ),
+        legend=dict(
+            x=0.8,
+            y=0.9,
+            bgcolor='rgba(255,255,255,0.5)',
+            bordercolor='black'
+        ),
+        margin=dict(l=0, r=0, b=0, t=30)
+    )
+
+    # Create the figure and display it
+    fig = go.Figure(data=data_traces, layout=layout)
+    fig.update_layout(scene_camera=dict(eye=dict(x=1.2, y=1.2, z=0.8)))
+    fig.show()
+
+
+def recreate_track_ids_greedy(labels_file, output_file, max_distance=50, frame_gap=2):
+    """
+    Recreates consistent track IDs across frames based on spatial proximity,
+    ensuring each track ID corresponds to the closest object and is unique.
+
+    Parameters:
+    labels_file (str): Path to the anonymized labels file.
+    output_file (str): Path to save the labels file with recreated track IDs.
+    max_distance (float): Maximum distance to consider two centers as the same object.
+    frame_gap (int): Maximum gap in frames to keep a track active.
+    """
+    # Parse the anonymized labels file
+    with open(labels_file, 'r') as file:
+        labels = [line.strip().split() for line in file]
+
+    # Convert frame data into a dictionary for easier access
+    frames = {}
+    for line in labels:
+        frame = int(line[0])
+        if frame not in frames:
+            frames[frame] = []
+        frames[frame].append(line)
+
+    # Dictionary to store active tracks (track_id → [center, last_frame])
+    active_tracks = {}
+    next_track_id = 1
+    updated_labels = []
+
+    # Process frames in order
+    for frame in sorted(frames.keys()):
+        current_objects = frames[frame]
+        frame_tracks = {}
+        used_tracks = set()
+        used_objects = set()
+
+        # Compute object centers
+        objects_info = []
+        for i, obj in enumerate(current_objects):
+            _, _, obj_type, truncated, occluded, alpha, left, top, right, bottom, *rest = obj
+            bbox = [float(left), float(top), float(right), float(bottom)]
+            center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+            objects_info.append((i, center, obj))
+
+        # Compute distances between active tracks and current objects
+        distances = []
+        for track_id, (track_center, last_frame) in active_tracks.items():
+            if frame - last_frame <= frame_gap:
+                for obj_idx, obj_center, obj_data in objects_info:
+                    dist = distance.euclidean(track_center, obj_center)
+                    if dist < max_distance:
+                        distances.append((dist, track_id, obj_idx, obj_data, obj_center))
+
+        # Sort distances to prioritize closest matches
+        distances.sort(key=lambda x: x[0])
+
+        # Assign tracks to closest objects
+        for _, track_id, obj_idx, obj_data, obj_center in distances:
+            if track_id not in used_tracks and obj_idx not in used_objects:
+                used_tracks.add(track_id)
+                used_objects.add(obj_idx)
+                frame_tracks[track_id] = obj_center
+
+                # Reconstruct the label with the assigned track ID
+                updated_line = [frame, track_id] + obj_data[2:]
+                updated_labels.append(" ".join(map(str, updated_line)))
+
+        # Assign new track IDs to unmatched objects
+        for obj_idx, obj_center, obj_data in objects_info:
+            if obj_idx not in used_objects:
+                new_track_id = next_track_id
+                next_track_id += 1
+                frame_tracks[new_track_id] = obj_center
+
+                # Reconstruct the label with the new track ID
+                updated_line = [frame, new_track_id] + obj_data[2:]
+                updated_labels.append(" ".join(map(str, updated_line)))
+
+        # Update active tracks
+        active_tracks = {tid: (center, frame) for tid, center in frame_tracks.items()}
+
+    # Write the updated labels to the output file
+    with open(output_file, 'w') as file:
+        file.writelines(line + "\n" for line in updated_labels)
+
+    print(f"Track IDs recreated and saved to {output_file}")
