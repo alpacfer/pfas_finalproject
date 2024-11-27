@@ -131,30 +131,30 @@ def generate_depth_maps(base_dir, sequence):
     p2 = 32 * 3 * block_size ** 2
 
     # Create StereoSGBM object
-    # stereo = cv2.StereoSGBM_create(
-    #     minDisparity=min_disp,
-    #     numDisparities=num_disp,
-    #     blockSize=block_size,
-    #     P1=p1,
-    #     P2=p2,
-    #     disp12MaxDiff=disp_max_diff,
-    #     uniquenessRatio=uniqueness_ratio,
-    #     speckleWindowSize=speckle_window_size,
-    #     speckleRange=speckle_range,
-    #     preFilterCap=63,
-    #     mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
-    # )
+    stereo = cv2.StereoSGBM_create(
+        minDisparity=min_disp,
+        numDisparities=num_disp,
+        blockSize=block_size,
+        P1=p1,
+        P2=p2,
+        disp12MaxDiff=disp_max_diff,
+        uniquenessRatio=uniqueness_ratio,
+        speckleWindowSize=speckle_window_size,
+        speckleRange=speckle_range,
+        preFilterCap=63,
+        mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
+    )
 
-    stereo = cv2.StereoBM_create(
-        numDisparities=num_disp, 
-        blockSize=block_size)
+    # stereo = cv2.StereoBM_create(
+    #     numDisparities=num_disp, 
+    #     blockSize=block_size)
     
-    # Set additional fine-tuning parameters
-    stereo.setMinDisparity(min_disp)  # Sets the minimum disparity
-    stereo.setDisp12MaxDiff(disp_max_diff)  # Max difference between left and right disparities. Lower = more accurate, higher = looser.
-    stereo.setUniquenessRatio(uniqueness_ratio)  # How unique a match must be. Higher = stricter matching, lower = more noise.
-    stereo.setSpeckleRange(speckle_range)  # Max disparity variation in speckles (noise). Lower = more aggressive noise removal.
-    stereo.setSpeckleWindowSize(speckle_window_size)  # Size of noisy regions to be removed. Higher = keep more valid data but may retain noise.
+    # # Set additional fine-tuning parameters
+    # stereo.setMinDisparity(min_disp)  # Sets the minimum disparity
+    # stereo.setDisp12MaxDiff(disp_max_diff)  # Max difference between left and right disparities. Lower = more accurate, higher = looser.
+    # stereo.setUniquenessRatio(uniqueness_ratio)  # How unique a match must be. Higher = stricter matching, lower = more noise.
+    # stereo.setSpeckleRange(speckle_range)  # Max disparity variation in speckles (noise). Lower = more aggressive noise removal.
+    # stereo.setSpeckleWindowSize(speckle_window_size)  # Size of noisy regions to be removed. Higher = keep more valid data but may retain noise.
 
 
     # Parameters
@@ -242,7 +242,7 @@ def generate_depth_maps(base_dir, sequence):
 
         #Debugging: Coverage and visualization
         coverage = np.count_nonzero(disparity_normalized[non_overlap[0] == 1]) / np.count_nonzero(non_overlap[0])
-        viz = False
+        viz = True
         if viz:
             print(f"Saved disparity map to {output_file_path}")
             print(f'Img Shape: {left_image.shape}')
@@ -359,7 +359,7 @@ def evaluate_sequence_depth(base_dir,sequence_id=1):
 
 # Example usage
 base_dir = r"C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data"
-generate_depth_maps(base_dir, "seq_01")
+# generate_depth_maps(base_dir, "seq_01")
 # generate_depth_maps(base_dir, "seq_02")
 # generate_depth_maps(base_dir, "seq_03")
 
