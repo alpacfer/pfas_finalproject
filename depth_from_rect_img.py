@@ -112,12 +112,12 @@ def generate_depth_maps(base_dir, sequence):
         print("Error: The number of left and right images do not match")
         return
     
-    midas = torch.hub.load("intel-isl/MiDaS", "DPT_Large", pretrained=True)
-    midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-    transform = midas_transforms.dpt_transform
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    midas.to(device)
-    midas.eval()
+    # midas = torch.hub.load("intel-isl/MiDaS", "DPT_Large", pretrained=True)
+    # midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+    # transform = midas_transforms.dpt_transform
+    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # midas.to(device)
+    # midas.eval()
 
     # SGBM parameters based on literature for KITTI
     min_disp = 0
@@ -208,22 +208,22 @@ def generate_depth_maps(base_dir, sequence):
         depth [depth>80]=0
 
         # Dense Depth Prediction from MiDaS calibrated with Metric Measurements from Stereo
-        input_batch = transform(left_image)
-        with torch.no_grad():
-            pred_depth = midas(input_batch)
+        # input_batch = transform(left_image)
+        # with torch.no_grad():
+        #     pred_depth = midas(input_batch)
 
-            pred_depth = torch.nn.functional.interpolate(
-                pred_depth.unsqueeze(1),
-                size=left_image.shape[:2],
-                mode="bicubic",
-                align_corners=False,
-            ).squeeze()
+        #     pred_depth = torch.nn.functional.interpolate(
+        #         pred_depth.unsqueeze(1),
+        #         size=left_image.shape[:2],
+        #         mode="bicubic",
+        #         align_corners=False,
+        #     ).squeeze()
 
         
-        pred_depth = pred_depth.cpu().numpy()
+        # pred_depth = pred_depth.cpu().numpy()
 
-        mask = (0 < depth ) & (depth < 80)
-        pred_depth_metric = to_depth(torch.tensor(pred_depth).unsqueeze(0), torch.tensor(depth).unsqueeze(0), torch.tensor(mask).unsqueeze(0))
+        # mask = (0 < depth ) & (depth < 80)
+        # pred_depth_metric = to_depth(torch.tensor(pred_depth).unsqueeze(0), torch.tensor(depth).unsqueeze(0), torch.tensor(mask).unsqueeze(0))
 
 
 
@@ -236,13 +236,13 @@ def generate_depth_maps(base_dir, sequence):
         # Save results
         output_file_path = os.path.join(output_dir, os.path.basename(left_image_path))
         np.save(output_file_path[:-4], depth)
-        np.save(f"{output_file_path[:-4]}_midas", pred_depth)
-        np.save(f"{output_file_path[:-4]}_midas_metric", pred_depth_metric)
+        # np.save(f"{output_file_path[:-4]}_midas", pred_depth)
+        # np.save(f"{output_file_path[:-4]}_midas_metric", pred_depth_metric)
         cv2.imwrite(output_file_path, disparity_normalized)
 
         #Debugging: Coverage and visualization
         coverage = np.count_nonzero(disparity_normalized[non_overlap[0] == 1]) / np.count_nonzero(non_overlap[0])
-        viz = True
+        viz = False
         if viz:
             print(f"Saved disparity map to {output_file_path}")
             print(f'Img Shape: {left_image.shape}')
@@ -269,7 +269,7 @@ def generate_depth_maps(base_dir, sequence):
 
             # ax[2].imshow(non_overlap[0], cmap="gray")
             # ax[2].set_title("Non-overlapping Region Mask")
-            ax[2].imshow(pred_depth_metric[0], cmap="gray")
+            # ax[2].imshow(pred_depth_metric[0], cmap="gray")
             plt.show()
 
     print("Processing complete.")
@@ -361,6 +361,6 @@ def evaluate_sequence_depth(base_dir,sequence_id=1):
 base_dir = r"C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data"
 # generate_depth_maps(base_dir, "seq_01")
 # generate_depth_maps(base_dir, "seq_02")
-# generate_depth_maps(base_dir, "seq_03")
+generate_depth_maps(base_dir, "seq_03")
 
 evaluate_sequence_depth(base_dir,1)
