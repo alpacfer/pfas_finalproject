@@ -2,9 +2,9 @@ import os
 import numpy as np
 from helper_function.bbhelp import extract_image_info
 
-labels_file_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\reect\seq_03\labels.txt'
-images_folder_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\reect\seq_03\image_02\data'
-depth_maps_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\sgbm_depth_maps\seq_03'
+labels_file_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\reect\seq_02\labels.txt'
+images_folder_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\reect\seq_02\image_02\data'
+depth_maps_path = r'C:\Users\Hasan\OneDrive\Desktop\Projects\pfas_finalproject\data\sgbm_depth_maps\seq_02'
 
 P_rect_02 = np.array([
     [7.070493e+02, 0.000000e+00, 6.040814e+02, 4.575831e+01],
@@ -30,15 +30,12 @@ for i, image_file in enumerate(image_files):
         pred['pos'] = position_stereo
 
     for pred in preds:
-        if pred['occluded'] == 0:
             predictions.append(
                 f"{i} {pred['track_id']} {pred['type']} {pred['bbox'][0]} {pred['bbox'][1]} {pred['bbox'][2]} {pred['bbox'][3]} "
                 f"{pred['dimensions'][0]} {pred['dimensions'][1]} {pred['dimensions'][2]} "
                 f"{pred['location'][0]} {pred['location'][1]} {pred['location'][2]} {pred['rotation_y']}\n"
             )
-        else:
-            preds.remove(pred)
 
-preds_file = "stereo_preds_seq_03.txt"
+preds_file = "stereo_preds_seq_02_all_.txt"
 with open(preds_file, 'w') as f:
     f.writelines(predictions)
