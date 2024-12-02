@@ -20,22 +20,23 @@ predictions = []
 
 for i, image_file in enumerate(image_files):
     labels = extract_image_info(i,labels_file_path)
-    print(f'read labels for image {i:06d}')
-    depth = np.load(os.path.join(depth_maps_path, f'{i:010d}.npy'))
+    print(f'read labels for image {i:010d}')
+    depth = np.load(os.path.join(depth_maps_path, f'{i:010}.npy'))
     preds = labels.copy()
 
     for pred in preds:
         center = np.array([pred['center'][0], pred['center'][1], 1])
         position_stereo = depth[int(pred['center'][1]), int(pred['center'][0])] * (K_inv @ center)
-        pred['pos'] = position_stereo
+        pred['location'] = position_stereo
 
     for pred in preds:
+        if pred['occluded'] == 0:
             predictions.append(
                 f"{i} {pred['track_id']} {pred['type']} {pred['bbox'][0]} {pred['bbox'][1]} {pred['bbox'][2]} {pred['bbox'][3]} "
                 f"{pred['dimensions'][0]} {pred['dimensions'][1]} {pred['dimensions'][2]} "
                 f"{pred['location'][0]} {pred['location'][1]} {pred['location'][2]} {pred['rotation_y']}\n"
             )
 
-preds_file = "stereo_preds_seq_02_all_.txt"
+preds_file = "stereo_preds_seq_02.txt"
 with open(preds_file, 'w') as f:
     f.writelines(predictions)
